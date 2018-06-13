@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>netcoreapp2.0</TargetFramework>
+    <Authors>eMeL</Authors>
+    <Company>eMeL Bt., Hungary</Company>
+    <Description>BackupperKISS - Copy files/directories to ZIP archive and keeps previous versions</Description>
+    <Copyright>(CC BY-NC-SA 4.0) eMeL Bt., Hungary  [ www.emel.hu, emel@emel.hu ]</Copyright>
+    <PackageProjectUrl>www.emel.hu</PackageProjectUrl>
+    <PackageLicenseUrl>https://creativecommons.org/licenses/by-nc-sa/4.0/</PackageLicenseUrl>
+    <PackageReleaseNotes>A very simple backup utility.</PackageReleaseNotes>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.CommandLineUtils" Version="1.1.1" />
+  </ItemGroup>
+
+</Project>

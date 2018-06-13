@@ -1,0 +1,11 @@
+C:\eMeL_CSharp_Dev\Utilities\xcopyPV\bin\Debug\netcoreapp2.0\xcopyPV.deps.json
+C:\eMeL_CSharp_Dev\Utilities\xcopyPV\bin\Debug\netcoreapp2.0\xcopyPV.runtimeconfig.json
+C:\eMeL_CSharp_Dev\Utilities\xcopyPV\bin\Debug\netcoreapp2.0\xcopyPV.runtimeconfig.dev.json
+C:\eMeL_CSharp_Dev\Utilities\xcopyPV\bin\Debug\netcoreapp2.0\xcopyPV.dll
+C:\eMeL_CSharp_Dev\Utilities\xcopyPV\obj\Debug\netcoreapp2.0\xcopyPV.csprojResolveAssemblyReference.cache
+C:\eMeL_CSharp_Dev\Utilities\xcopyPV\obj\Debug\netcoreapp2.0\xcopyPV.csproj.CoreCompileInputs.cache
+C:\eMeL_CSharp_Dev\Utilities\xcopyPV\obj\Debug\netcoreapp2.0\xcopyPV.AssemblyInfoInputs.cache
+C:\eMeL_CSharp_Dev\Utilities\xcopyPV\obj\Debug\netcoreapp2.0\xcopyPV.AssemblyInfo.cs
+C:\eMeL_CSharp_Dev\Utilities\xcopyPV\bin\Debug\netcoreapp2.0\xcopyPV.pdb
+C:\eMeL_CSharp_Dev\Utilities\xcopyPV\obj\Debug\netcoreapp2.0\xcopyPV.dll
+C:\eMeL_CSharp_Dev\Utilities\xcopyPV\obj\Debug\netcoreapp2.0\xcopyPV.pdb
