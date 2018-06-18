@@ -49,6 +49,13 @@ namespace BackupperKISS
         this.parameters.includeFiles.Add(Parameters.includeFileWildcardDefault);
       }
 
+      if (parameters.excludeFiles == null)
+      {
+        this.parameters.excludeFiles = new List<string>();
+      }
+
+      this.parameters.excludeFiles.Add("*" + this.parameters.targetExtension);
+
       this.parameters.sourceDir = AddDirectorySeparatorChar(parameters.sourceDir);
       this.parameters.targetDir = AddDirectorySeparatorChar(parameters.targetDir);
     }
@@ -60,7 +67,7 @@ namespace BackupperKISS
       return Backup(relativePath);
     }  
     
-    private const string timeFormater = "yyyyMMdd_hhmmss";
+    private const string timeFormater = "yyyyMMdd_HHmmss";
     private const char   partSelector = '~';
 
     private (int copied, int droped) Backup(string relativePath)
@@ -89,7 +96,9 @@ namespace BackupperKISS
             }
             else
             {
-              bool found = false;
+              bool foundThisTargetFile = false;
+
+              File.SetAttributes(fullTargetFilename, File.GetAttributes(fullTargetFilename) & ~FileAttributes.ReadOnly);   // remove readonly bit
 
               using (ZipArchive archive = ZipFile.Open(fullTargetFilename, ZipArchiveMode.Update))
               {
@@ -99,7 +108,7 @@ namespace BackupperKISS
                 {
                   if (entry.Name == targetZipEntryName)
                   {
-                    found = true;
+                    foundThisTargetFile = true;
                   }
                   else
                   {
@@ -107,10 +116,15 @@ namespace BackupperKISS
                   }
                 }
 
-                if (!found)
+                if (!foundThisTargetFile)
                 {
                   archive.CreateEntryFromFile(fullSourceFilename, targetZipEntryName);
                   copied++;
+
+                  if (parameters.logEcho)
+                  {
+                    Console.WriteLine(fullSourceFilename);
+                  }
                 }
 
                 //
@@ -150,7 +164,7 @@ namespace BackupperKISS
                     entry.Delete();
                     droped++;
                   }
-                  else if (entry.Name.Substring(partSelectorPos + 1).CompareTo(keepDate) < 1)
+                  else if (entry.Name.Substring(partSelectorPos + 1).CompareTo(keepDate) < 0)
                   { // drop it, it's too old
                     entry.Delete();
                     droped++;
@@ -179,20 +193,39 @@ namespace BackupperKISS
               archive.CreateEntryFromFile(fullSourceFilename, targetZipEntryName);
               updateZipDate = true;
               copied++;
+
+              if (parameters.logEcho)
+              {
+                Console.WriteLine(fullSourceFilename);
+              }
             }
           }
 
           if (updateZipDate)
-          {
-            File.SetAttributes(fullTargetFilename, FileAttributes.ReadOnly);
+          {            
             File.SetLastWriteTime(fullTargetFilename, sourceLWT);
+            File.SetAttributes(fullTargetFilename, FileAttributes.ReadOnly);
           }
 
+          if (parameters.clearArchiveBit)
+          {
+            File.SetAttributes(fullSourceFilename, File.GetAttributes(fullSourceFilename) & ~FileAttributes.Archive);   // remove archive bit
+          }
+        }
 
+        if (parameters.copySubdirectories)
+        {
+          var directories = Directory.GetDirectories(parameters.sourceDir + relativePath);
 
+          foreach (var subdir in directories)
+          {
+            var relSubDir = subdir.Substring(parameters.sourceDir.Length);
 
+            var result = Backup(AddDirectorySeparatorChar(relSubDir));                                            // recursion
 
-          // TODO: ...!!!...
+            copied += result.copied;
+            droped += result.droped;
+          }
         }
       }
 
@@ -229,9 +262,9 @@ namespace BackupperKISS
 
       foreach (var wildcard in parameters.includeFiles)
       {
-        var tempNames = Directory.GetFiles(parameters.sourceDir + relativePath, wildcard);
+        var includeNames = Directory.GetFiles(parameters.sourceDir + relativePath, wildcard);
 
-        foreach (var tempName in tempNames)
+        foreach (var tempName in includeNames)
         {
           bool enabled = true;
 
@@ -250,6 +283,18 @@ namespace BackupperKISS
             files.Add(tempName);                                                      // This will filter duplicate filenames
           }
         }        
+      }
+
+      //
+
+      foreach (var wildcard in parameters.excludeFiles)
+      {
+        var excludeNames = Directory.GetFiles(parameters.sourceDir + relativePath, wildcard);
+
+        foreach (var tempName in excludeNames)
+        {
+          files.Remove(tempName);                                                      // This will filter duplicate filenames
+        }
       }
 
       return files;

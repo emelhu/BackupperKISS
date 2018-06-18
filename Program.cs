@@ -22,7 +22,7 @@ namespace BackupperKISS
       if (!parameters.silence)
       {
         Console.WriteLine("*** BackupperKISS - Copy files/directories to ZIP archive and keeps previous versions ***");
-        Console.WriteLine("                                                                  \"Keep it simple, stupid\"");
+        Console.WriteLine("                                                                 \"Keep it simple, stupid\"");
         Console.WriteLine("                                                            FreeWare by eMeL, www.emel.hu\n");
       }
 
@@ -270,17 +270,29 @@ namespace BackupperKISS
       return result;
     }
 
-    private static void ShowErrorMessageAndUsage(string errorMessage = null, int exitCode = 0)
+    private static void ShowErrorMessageAndUsage(string errorMessage = null, int exitCode = 0, bool showHelp = true)
     {
-      if (!String.IsNullOrWhiteSpace(errorMessage))
-      {
-        Console.Error.WriteLine(errorMessage);
-      }
-
-      if (!parameters.silence)
+      if (showHelp && !parameters.silence)
       {
         commandLineApp.ShowHelp();
       }
+
+      if (!String.IsNullOrWhiteSpace(errorMessage))
+      {
+        var colBG = Console.BackgroundColor;
+        var colFG = Console.ForegroundColor;
+
+        Console.BackgroundColor = ConsoleColor.Yellow;
+        Console.ForegroundColor = ConsoleColor.Red;
+
+        Console.Error.WriteLine();
+        Console.Error.WriteLine("-------------------------------- !!! ERROR !!! --------------------------------");
+        Console.Error.WriteLine(errorMessage);
+        Console.Error.WriteLine();
+
+        Console.BackgroundColor = colBG;
+        Console.ForegroundColor = colFG;
+      }    
 
       #if DEBUG
       Console.ReadKey();
@@ -297,21 +309,21 @@ namespace BackupperKISS
       if (!parameters.silence)
       {
         Console.WriteLine("--- Command line parameters: ---");
-        Console.WriteLine($"Source directory:       {parameters.sourceDir}");
-        Console.WriteLine($"Target directory:       {parameters.targetDir}");
-        Console.WriteLine($"Include files:          {string.Join("|", parameters.includeFiles)}");
-        Console.WriteLine($"Exclude files:          {string.Join("|", parameters.excludeFiles)}");
-        Console.WriteLine($"Copy subdirectories:    {parameters.copySubdirectories}");
-        Console.WriteLine($"Create root directory:  {parameters.createRootDirectory}");
-        Console.WriteLine($"Exist subdirectories:   {parameters.existSubdirectories}");
-        Console.WriteLine($"Check archive bit:      {parameters.checkArchiveBit}");
-        Console.WriteLine($"Clear archive bit:      {parameters.clearArchiveBit}");
-        Console.WriteLine($"Prev.Ver. Files Count:  {parameters.prevVerFilesCount}");
-        Console.WriteLine($"Prev.Ver. Files Size:   {parameters.prevVerFilesSize} Kbytes");
-        Console.WriteLine($"Prev.Ver. Files Age:    {parameters.prevVerFilesAge} days");
-        Console.WriteLine($"Silence/Supress displ.: {parameters.silence}");
-        Console.WriteLine($"Echo copied filename:   {parameters.logEcho}");
-        Console.WriteLine($"Quick check:            {parameters.quickCheck}");
+        Console.WriteLine($"Source directory      [1st]:  {parameters.sourceDir}");
+        Console.WriteLine($"Target directory      [2nd]:  {parameters.targetDir}");
+        Console.WriteLine($"Include files         [-i] :  {string.Join("|", parameters.includeFiles)}");
+        Console.WriteLine($"Exclude files         [-e] :  {string.Join("|", parameters.excludeFiles)}");
+        Console.WriteLine($"Copy subdirectories   [-s] :  {parameters.copySubdirectories}");
+        Console.WriteLine($"Create root directory [-cr]:  {parameters.createRootDirectory}");
+        Console.WriteLine($"Exist subdirectories  [-es]:  {parameters.existSubdirectories}");
+        Console.WriteLine($"Check archive bit     [-q] :  {parameters.checkArchiveBit}");
+        Console.WriteLine($"Clear archive bit     [-c] :  {parameters.clearArchiveBit}");
+        Console.WriteLine($"Prev.Ver. Files Count [-pv]:  {parameters.prevVerFilesCount}");
+        Console.WriteLine($"Prev.Ver. Files Size  [-pv]:  {parameters.prevVerFilesSize} Kbytes");
+        Console.WriteLine($"Prev.Ver. Files Age   [-pv]:  {parameters.prevVerFilesAge} days");
+        Console.WriteLine($"Silence/Supress displ.[-si]:  {parameters.silence}");
+        Console.WriteLine($"Echo copied filename  [-le]:  {parameters.logEcho}");
+        Console.WriteLine($"Quick check           [-qc]:  {parameters.quickCheck}");
 
         Console.WriteLine();
       }

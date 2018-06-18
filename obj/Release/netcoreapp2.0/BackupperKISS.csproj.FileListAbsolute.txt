@@ -1,0 +1,13 @@
+C:\eMeL_CSharp_Dev\Utilities\BackupperKISS\bin\Release\netcoreapp2.0\BackupperKISS.deps.json
+C:\eMeL_CSharp_Dev\Utilities\BackupperKISS\bin\Release\netcoreapp2.0\BackupperKISS.runtimeconfig.json
+C:\eMeL_CSharp_Dev\Utilities\BackupperKISS\bin\Release\netcoreapp2.0\BackupperKISS.runtimeconfig.dev.json
+C:\eMeL_CSharp_Dev\Utilities\BackupperKISS\bin\Release\netcoreapp2.0\BackupperKISS.dll
+C:\eMeL_CSharp_Dev\Utilities\BackupperKISS\bin\Release\netcoreapp2.0\BackupperKISS.pdb
+C:\eMeL_CSharp_Dev\Utilities\BackupperKISS\obj\Release\netcoreapp2.0\BackupperKISS.csprojResolveAssemblyReference.cache
+C:\eMeL_CSharp_Dev\Utilities\BackupperKISS\obj\Release\netcoreapp2.0\BackupperKISS.Properties.Resources.resources
+C:\eMeL_CSharp_Dev\Utilities\BackupperKISS\obj\Release\netcoreapp2.0\BackupperKISS.csproj.GenerateResource.Cache
+C:\eMeL_CSharp_Dev\Utilities\BackupperKISS\obj\Release\netcoreapp2.0\BackupperKISS.csproj.CoreCompileInputs.cache
+C:\eMeL_CSharp_Dev\Utilities\BackupperKISS\obj\Release\netcoreapp2.0\BackupperKISS.AssemblyInfoInputs.cache
+C:\eMeL_CSharp_Dev\Utilities\BackupperKISS\obj\Release\netcoreapp2.0\BackupperKISS.AssemblyInfo.cs
+C:\eMeL_CSharp_Dev\Utilities\BackupperKISS\obj\Release\netcoreapp2.0\BackupperKISS.dll
+C:\eMeL_CSharp_Dev\Utilities\BackupperKISS\obj\Release\netcoreapp2.0\BackupperKISS.pdb

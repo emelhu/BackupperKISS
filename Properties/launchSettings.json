@@ -2,7 +2,7 @@
   "profiles": {
     "BackupperKISS": {
       "commandName": "Project",
-      "commandLineArgs": "c:\\_work_\\test\\*.*   C:\\_work_\\BackupperKISS_test -a --subdir -pv  \"10d,20m,3q\"  -cr --exclude \"*.tmp/  *temp\"  -e *.bak -e *.work -e work*.* -i=\"*.doc |||| *.docx / *.txt\""
+      "commandLineArgs": "c:\\_work_\\test\\*.*   C:\\_work_\\BackupperKISS_test -a --subdir -pv  \"10d,20m,3q\"  -cr --exclude \"*.tmp\" -qc -le"
     }
   }
 }
