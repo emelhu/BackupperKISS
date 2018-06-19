@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using Microsoft.Extensions.CommandLineUtils;
 using System.Text.RegularExpressions;
 using System.IO;
+using System.Xml.Serialization;
 
 
 // Install-Package Microsoft.Extensions.CommandLineUtils
@@ -21,9 +22,19 @@ namespace BackupperKISS
     {
       if (!parameters.silence)
       {
+        var colBG = Console.BackgroundColor;
+        var colFG = Console.ForegroundColor;
+
+        Console.BackgroundColor = ConsoleColor.Gray;
+        Console.ForegroundColor = ConsoleColor.DarkRed;   
+
         Console.WriteLine("*** BackupperKISS - Copy files/directories to ZIP archive and keeps previous versions ***");
+        Console.ForegroundColor = ConsoleColor.DarkGray;
         Console.WriteLine("                                                                 \"Keep it simple, stupid\"");
         Console.WriteLine("                                                            FreeWare by eMeL, www.emel.hu\n");
+        
+        Console.BackgroundColor = colBG;
+        Console.ForegroundColor = colFG;
       }
 
       GetParams(args);
@@ -91,6 +102,11 @@ namespace BackupperKISS
       var logEchoOption     = commandLineApp.Option("-le|--logecho", "Echo name of copied files to display.",     CommandOptionType.NoValue);
 
       var quickCheckOption  = commandLineApp.Option("-qc|--quickcheck", "If date of ZIP is unchanged, assume the content is unchanged too!", CommandOptionType.NoValue);
+      
+      var backupOfBackupOption = commandLineApp.Option("-bb|--backupbackup", "Backup of own backup files too.", CommandOptionType.NoValue);
+
+      var saveParamsOption  = commandLineApp.Option("-sp|--saveparams <filename>", "Save this parameters to XML file.",                 CommandOptionType.SingleValue);
+      var loadParamsOption  = commandLineApp.Option("-lp|--loadparams <filename>", "Load parameters from XML file for default values.", CommandOptionType.SingleValue);
 
       try
       {
@@ -102,16 +118,28 @@ namespace BackupperKISS
       }
 
       //
-      
-      if (string.IsNullOrWhiteSpace(sourceDirArgument.Value) || string.IsNullOrWhiteSpace(targetDirArgument.Value))
+
+      if (loadParamsOption.HasValue())
       {
-        ShowErrorMessageAndUsage("The 'sourceDir' & 'targetDir' arguments are required!", 2);
+        parameters = LoadParameterXML(loadParamsOption.Value());
       }
 
       #region processing arguments and options 
 
-      parameters.sourceDir            = sourceDirArgument.Value;
-      parameters.targetDir            = targetDirArgument.Value;
+      if (!string.IsNullOrWhiteSpace(sourceDirArgument.Value))
+      {
+        parameters.sourceDir = sourceDirArgument.Value;
+      }
+
+      if (!string.IsNullOrWhiteSpace(targetDirArgument.Value))
+      {
+        parameters.targetDir = targetDirArgument.Value;
+      }
+
+      if (string.IsNullOrWhiteSpace(parameters.sourceDir) || string.IsNullOrWhiteSpace(parameters.targetDir))
+      {
+        ShowErrorMessageAndUsage("The 'sourceDir' & 'targetDir' arguments are required!", 2);
+      }
 
       parameters.checkArchiveBit      = archiveOption.HasValue();
       parameters.clearArchiveBit      = clearOption.HasValue();
@@ -132,8 +160,85 @@ namespace BackupperKISS
       CorrectingSourceDirParameter();
 
       ProcessingPrevVersionOption(prevVersionOption);
-      
+
+      if (saveParamsOption.HasValue())
+      {
+        SaveParameterXML(saveParamsOption.Value(), parameters);
+      }
+
       #endregion
+    }
+
+    private static void SaveParameterXML(string filename, Parameters parameters)
+    {
+      if (parameters.prevVersParameters == null)
+      {
+        parameters.prevVersParameters = new List<PrevVersParameters>();
+      }
+
+      if (parameters.excludeFiles == null)
+      {
+        parameters.excludeFiles = new List<string>();
+      }
+
+      if (parameters.includeFiles == null)
+      {
+        parameters.includeFiles = new List<string>();
+      }
+
+      filename = GetParameterXMLfilename(filename);
+
+      if (!parameters.silence)
+      {
+        Console.WriteLine($"Save parameters to {filename}");
+      }
+
+      XmlSerializer serializer = new XmlSerializer(parameters.GetType());
+
+      using (StreamWriter file = new StreamWriter(filename))
+      {
+        serializer.Serialize(file, parameters);
+      }
+    }
+
+    private static Parameters LoadParameterXML(string filename)
+    {
+      filename = GetParameterXMLfilename(filename);
+
+      if (!parameters.silence)
+      {
+        Console.WriteLine($"Load default parameter values from {filename}");
+      }
+
+      Parameters retPars;
+
+      XmlSerializer serializer = new XmlSerializer(parameters.GetType());
+
+      using (StreamReader file = new StreamReader(filename))
+      {
+        retPars = (Parameters)(serializer.Deserialize(file));
+      }
+
+      return retPars;
+    }
+
+    private static string GetParameterXMLfilename(string filename)
+    {
+      if (Path.GetExtension(filename).ToLower() != ".xml")
+      {
+        filename += ".xml";
+      }
+
+      if (Path.GetFileName(filename).Length != filename.Length)
+      {
+        var dirname = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "BackupperKISS");
+
+        Directory.CreateDirectory(dirname);
+
+        filename = Path.Combine(dirname, filename);
+      }
+
+      return filename;
     }
 
     private static void CorrectingSourceDirParameter()
@@ -324,6 +429,7 @@ namespace BackupperKISS
         Console.WriteLine($"Silence/Supress displ.[-si]:  {parameters.silence}");
         Console.WriteLine($"Echo copied filename  [-le]:  {parameters.logEcho}");
         Console.WriteLine($"Quick check           [-qc]:  {parameters.quickCheck}");
+        Console.WriteLine($"Backup of backup      [-bb]:  {parameters.backupOfBackup}");
 
         Console.WriteLine();
       }

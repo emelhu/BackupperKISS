@@ -54,7 +54,10 @@ namespace BackupperKISS
         this.parameters.excludeFiles = new List<string>();
       }
 
-      this.parameters.excludeFiles.Add("*" + this.parameters.targetExtension);
+      if (!this.parameters.backupOfBackup)
+      {
+        this.parameters.excludeFiles.Add("*" + this.parameters.targetExtension);
+      }
 
       this.parameters.sourceDir = AddDirectorySeparatorChar(parameters.sourceDir);
       this.parameters.targetDir = AddDirectorySeparatorChar(parameters.targetDir);
@@ -85,7 +88,7 @@ namespace BackupperKISS
           string fullTargetFilename = Path.Combine(parameters.targetDir + relativePath, sourceFilename + parameters.targetExtension);
 
           var    sourceLWT          = File.GetLastWriteTime(fullSourceFilename);
-          string targetZipEntryName = sourceFilename + partSelector + sourceLWT.ToString(timeFormater);
+          string targetZipEntryName = Path.GetFileNameWithoutExtension(sourceFilename) + partSelector + sourceLWT.ToString(timeFormater) + Path.GetExtension(sourceFilename);
           bool   updateZipDate      = false;
 
           if (File.Exists(fullTargetFilename))
@@ -156,15 +159,18 @@ namespace BackupperKISS
 
                 foreach (var entry in entries)
                 {
-                  int partSelectorPos = entry.Name.LastIndexOf(partSelector);
+                  int entrySelectorPos  = entry.Name.LastIndexOf(partSelector);
+                  int targetSelectorPos = targetZipEntryName.LastIndexOf(partSelector);
 
-                  if ((entry.Name.Length != targetZipEntryName.Length) ||
-                      (partSelectorPos   != targetZipEntryName.LastIndexOf(partSelector)))
+                  if ((entry.Name.Length                               != targetZipEntryName.Length) ||
+                      (entrySelectorPos                                != targetSelectorPos) ||
+                      (Path.GetExtension(entry.Name).ToLower()         != Path.GetExtension(targetZipEntryName).ToLower()) ||
+                      (entry.Name.Substring(0, partSelector).ToLower() != targetZipEntryName.Substring(0, partSelector).ToLower()))
                   { // drop it, it's not my content
                     entry.Delete();
                     droped++;
                   }
-                  else if (entry.Name.Substring(partSelectorPos + 1).CompareTo(keepDate) < 0)
+                  else if (entry.Name.Substring(entrySelectorPos + 1, keepDate.Length).CompareTo(keepDate) < 0)
                   { // drop it, it's too old
                     entry.Delete();
                     droped++;
