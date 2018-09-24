@@ -9,6 +9,10 @@ using System.Xml.Serialization;
 
 // Install-Package Microsoft.Extensions.CommandLineUtils
 
+// Test parameters: c:\_work_\test\*.*   C:\_work_\BackupperKISS_test -a --subdir -pv  "10d,20m5"  -cr --exclude "*.tmp"  -le   -qc -wd  --saveparams c:\_work_\proba.param.txt
+
+// http://alphavss.alphaleonis.com/index.html   --- AlphaVSS is a .NET class library providing a managed API for the Volume Shadow Copy Service.
+
 namespace BackupperKISS
 {
   class Program
@@ -37,9 +41,7 @@ namespace BackupperKISS
         Console.ForegroundColor = colFG;
       }
 
-      GetParams(args);
-
-      ShowParameterValues();
+      GetParams(args);      
 
       try
       {
@@ -54,7 +56,7 @@ namespace BackupperKISS
       }
       catch (Exception e)
       {
-        ShowErrorMessageAndUsage(e.Message, 10);
+        ShowErrorMessageAndUsage(e.Message, (int)ExitCode.Error);
       }
 
       #if DEBUG
@@ -80,11 +82,13 @@ namespace BackupperKISS
         return string.Format("Version {0}", Assembly.GetEntryAssembly().GetCustomAttribute<AssemblyInformationalVersionAttribute>().InformationalVersion);
       });
 
+      var methodOption  = commandLineApp.Option("-m|--method <Singly/Groups/Copy/Dont>", "Methode of backup and archive files.", CommandOptionType.SingleValue);
+
       var archiveOption = commandLineApp.Option("-a|--archive", "Check archive bit for select files to copy.", CommandOptionType.NoValue);      
 
       var clearOption   = commandLineApp.Option("-c|--clear",   "Clear archive bit of files after copy.",      CommandOptionType.NoValue);
        
-      var subdirOption  = commandLineApp.Option("-s|--subdir",  "Copies directories and subdirectories.",      CommandOptionType.NoValue);
+      var subdirOption  = commandLineApp.Option("-s|--subdir",  "Archive/Backup directories and subdirectories.",      CommandOptionType.NoValue);
 
       var createRootDirectoryOption   = commandLineApp.Option("-cr|--createrootdir", "Create target root directory.", CommandOptionType.NoValue); 
       var existSubdirectoriesOption   = commandLineApp.Option("-es|--existsubdir",   "Backup only exists target subdirectories.", CommandOptionType.NoValue);
@@ -103,10 +107,11 @@ namespace BackupperKISS
 
       var quickCheckOption  = commandLineApp.Option("-qc|--quickcheck", "If date of ZIP is unchanged, assume the content is unchanged too!", CommandOptionType.NoValue);
       
-      var backupOfBackupOption = commandLineApp.Option("-bb|--backupbackup", "Backup of own backup files too.", CommandOptionType.NoValue);
+      var backupOfBackupOption = commandLineApp.Option("-bb|--backupbackup", "Backup of own backup files too.",       CommandOptionType.NoValue);
 
-      var saveParamsOption  = commandLineApp.Option("-sp|--saveparams <filename>", "Save this parameters to XML file.",                 CommandOptionType.SingleValue);
-      var loadParamsOption  = commandLineApp.Option("-lp|--loadparams <filename>", "Load parameters from XML file for default values.", CommandOptionType.SingleValue);
+      var saveParamsOption  = commandLineApp.Option("-sp|--saveparams <filename>", "Save parameters to filename or use '*' for default name. Warning! The backup will not run!", CommandOptionType.SingleValue);   // SingleOrNoValue      
+
+      var writeDebugTextOption = commandLineApp.Option("-wd|--writedebug", "Write debug text to file is subdirectories.", CommandOptionType.NoValue);
 
       try
       {
@@ -114,15 +119,10 @@ namespace BackupperKISS
       }
       catch (Exception e)
       {
-        ShowErrorMessageAndUsage(e.Message, 3);
+        ShowErrorMessageAndUsage(e.Message, (int)ExitCode.ParameterErr2);
       }
 
       //
-
-      if (loadParamsOption.HasValue())
-      {
-        parameters = LoadParameterXML(loadParamsOption.Value());
-      }
 
       #region processing arguments and options 
 
@@ -138,7 +138,16 @@ namespace BackupperKISS
 
       if (string.IsNullOrWhiteSpace(parameters.sourceDir) || string.IsNullOrWhiteSpace(parameters.targetDir))
       {
-        ShowErrorMessageAndUsage("The 'sourceDir' & 'targetDir' arguments are required!", 2);
+        ShowErrorMessageAndUsage("The 'sourceDir' & 'targetDir' arguments are required!", (int)ExitCode.ParameterErr1);
+      }
+
+      if (methodOption.HasValue())
+      {
+        parameters.methodFullname = methodOption.Value();
+      }
+      else
+      {
+        parameters.method = MethodParameter.Singly;
       }
 
       parameters.checkArchiveBit      = archiveOption.HasValue();
@@ -149,97 +158,136 @@ namespace BackupperKISS
       parameters.createRootDirectory  = createRootDirectoryOption.HasValue();
       parameters.existSubdirectories  = existSubdirectoriesOption.HasValue();
 
-      parameters.includeFiles         = SplitParamList(includeFilesOption.Values);
-      parameters.excludeFiles         = SplitParamList(excludeFilesOption.Values);
+      parameters.includeFiles         = Parameters.SplitParamList(includeFilesOption.Values);
+      parameters.excludeFiles         = Parameters.SplitParamList(excludeFilesOption.Values);
 
       parameters.silence              = silenceOption.HasValue();
       parameters.logEcho              = logEchoOption.HasValue();
 
       parameters.quickCheck           = quickCheckOption.HasValue();
 
+      parameters.writeDebugText       = writeDebugTextOption.HasValue();
+
       CorrectingSourceDirParameter();
 
-      ProcessingPrevVersionOption(prevVersionOption);
+      parameters.prevVers.ProcessingParameterTextLines(prevVersionOption.Values);
 
       if (saveParamsOption.HasValue())
       {
-        SaveParameterXML(saveParamsOption.Value(), parameters);
+        string filename = saveParamsOption.Value();
+
+        if (filename == "*")
+        {
+          filename = null;                                                    // parameters.SaveTo() knows it.
+        }
+
+        parameters.Display("Saved parameter values:");
+
+        Console.WriteLine(" The '{0}' parameter file created.\n", parameters.SaveTo(filename));
+
+        ShowErrorMessageAndUsage("Parameter file created, didn't make a backup!", (int)ExitCode.NormalExit, false, true);
       }
 
       #endregion
     }
 
-    private static void SaveParameterXML(string filename, Parameters parameters)
-    {
-      if (parameters.prevVersParameters == null)
-      {
-        parameters.prevVersParameters = new List<PrevVersParameters>();
-      }
+    //private static void SaveParameterFile(string filename, Parameters parameters)
+    //{
+    //  throw new NotImplementedException();
 
-      if (parameters.excludeFiles == null)
-      {
-        parameters.excludeFiles = new List<string>();
-      }
+    //  Console.WriteLine("--- Command line parameters: ---");
+    //  Console.WriteLine($"Source directory      [1st]:  {parameters.sourceDir}");
+    //  Console.WriteLine($"Target directory      [2nd]:  {parameters.targetDir}");
+    //  Console.WriteLine($"Method                [-m] :  {parameters.methodFullname}");
+    //  Console.WriteLine($"Include files         [-i] :  {string.Join("|", parameters.includeFiles)}");
+    //  Console.WriteLine($"Exclude files         [-e] :  {string.Join("|", parameters.excludeFiles)}");
+    //  Console.WriteLine($"Copy subdirectories   [-s] :  {parameters.copySubdirectories}");
+    //  Console.WriteLine($"Create root directory [-cr]:  {parameters.createRootDirectory}");
+    //  Console.WriteLine($"Exist subdirectories  [-es]:  {parameters.existSubdirectories}");
+    //  Console.WriteLine($"Check archive bit     [-q] :  {parameters.checkArchiveBit}");
+    //  Console.WriteLine($"Clear archive bit     [-c] :  {parameters.clearArchiveBit}");
+    //  Console.WriteLine($"Prev.Ver. Files Count [-pv]:  {parameters.prevVerFilesCount}");
+    //  Console.WriteLine($"Prev.Ver. Files Size  [-pv]:  {parameters.prevVerFilesSize} Kbytes");
+    //  Console.WriteLine($"Prev.Ver. Files Age   [-pv]:  {parameters.prevVerFilesAge} days");
+    //  Console.WriteLine($"Silence/Supress displ.[-si]:  {parameters.silence}");
+    //  Console.WriteLine($"Echo copied filename  [-le]:  {parameters.logEcho}");
+    //  Console.WriteLine($"Quick check           [-qc]:  {parameters.quickCheck}");
+    //  Console.WriteLine($"Backup of backup      [-bb]:  {parameters.backupOfBackup}");
+    //}
 
-      if (parameters.includeFiles == null)
-      {
-        parameters.includeFiles = new List<string>();
-      }
+    #region waste
+    //private static void SaveParameterXML(string filename, Parameters parameters)
+    //{
+    //  if (parameters.prevVersParameters == null)
+    //  {
+    //    parameters.prevVersParameters = new List<PrevVersParameters>();
+    //  }
 
-      filename = GetParameterXMLfilename(filename);
+    //  if (parameters.excludeFiles == null)
+    //  {
+    //    parameters.excludeFiles = new List<string>();
+    //  }
 
-      if (!parameters.silence)
-      {
-        Console.WriteLine($"Save parameters to {filename}");
-      }
+    //  if (parameters.includeFiles == null)
+    //  {
+    //    parameters.includeFiles = new List<string>();
+    //  }
 
-      XmlSerializer serializer = new XmlSerializer(parameters.GetType());
+    //  filename = GetParameterXMLfilename(filename);
 
-      using (StreamWriter file = new StreamWriter(filename))
-      {
-        serializer.Serialize(file, parameters);
-      }
-    }
+    //  if (!parameters.silence)
+    //  {
+    //    Console.WriteLine($"Save parameters to {filename}");
+    //  }
 
-    private static Parameters LoadParameterXML(string filename)
-    {
-      filename = GetParameterXMLfilename(filename);
+    //  XmlSerializer serializer = new XmlSerializer(parameters.GetType());
 
-      if (!parameters.silence)
-      {
-        Console.WriteLine($"Load default parameter values from {filename}");
-      }
+    //  using (StreamWriter file = new StreamWriter(filename))
+    //  {
+    //    serializer.Serialize(file, parameters);
+    //  }
+    //}
 
-      Parameters retPars;
+    //private static Parameters LoadParameterXML(string filename)
+    //{
+    //  filename = GetParameterXMLfilename(filename);
 
-      XmlSerializer serializer = new XmlSerializer(parameters.GetType());
+    //  if (!parameters.silence)
+    //  {
+    //    Console.WriteLine($"Load default parameter values from {filename}");
+    //  }
 
-      using (StreamReader file = new StreamReader(filename))
-      {
-        retPars = (Parameters)(serializer.Deserialize(file));
-      }
+    //  Parameters retPars;
 
-      return retPars;
-    }
+    //  XmlSerializer serializer = new XmlSerializer(parameters.GetType());
 
-    private static string GetParameterXMLfilename(string filename)
-    {
-      if (Path.GetExtension(filename).ToLower() != ".xml")
-      {
-        filename += ".xml";
-      }
+    //  using (StreamReader file = new StreamReader(filename))
+    //  {
+    //    retPars = (Parameters)(serializer.Deserialize(file));
+    //  }
 
-      if (Path.GetFileName(filename).Length != filename.Length)
-      {
-        var dirname = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "BackupperKISS");
+    //  return retPars;
+    //}
 
-        Directory.CreateDirectory(dirname);
+    //private static string GetParameterXMLfilename(string filename)
+    //{
+    //  if (Path.GetExtension(filename).ToLower() != ".xml")
+    //  {
+    //    filename += ".xml";
+    //  }
 
-        filename = Path.Combine(dirname, filename);
-      }
+    //  if (Path.GetFileName(filename).Length != filename.Length)
+    //  {
+    //    var dirname = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "BackupperKISS");
 
-      return filename;
-    }
+    //    Directory.CreateDirectory(dirname);
+
+    //    filename = Path.Combine(dirname, filename);
+    //  }
+
+    //  return filename;
+    //}
+    #endregion
 
     private static void CorrectingSourceDirParameter()
     {
@@ -258,124 +306,9 @@ namespace BackupperKISS
 
         parameters.includeFiles.Add(wildcard);
       }
-    }
+    }    
 
-    private static void ProcessingPrevVersionOption(CommandOption prevVersionOption)
-    {
-      var tempControl = new List<(char type, char code, int multiplier, int maxvalue)>();
-
-      tempControl.Add(('s', 'k', 1,           1024 * 1024 * 1024));             // size:kilobyte
-      tempControl.Add(('s', 'm', 1024,        1024 * 1024));                    // size:megabyte
-      tempControl.Add(('s', 'g', 1024 * 1024, 1024));                           // size:gigabyte
-      tempControl.Add(('t', 'd', 1,           100 * 365));                      // time:day
-      tempControl.Add(('t', 'w', 7,           100 * 52));                       // time:week
-      tempControl.Add(('t', 'o', 31,          100 * 12));                       // time:month / warning:'o'
-      tempControl.Add(('t', 'y', 365,         100));                            // time:year
-      tempControl.Add(('q', 'q', 1,           1000));                           // quantity
-      tempControl.Add(('q', '#', 1,           1000));                           // quantity
-
-      //
-
-      var optionValues = new List<string>();
-
-      {
-        var regex = new Regex(@"\d+\D?", RegexOptions.IgnoreCase);    // split '124d54m24' format
-
-        foreach (var optionItem in SplitParamList(prevVersionOption.Values))
-        {
-          var matches = regex.Matches(optionItem.Trim());
-
-          foreach (Match match in matches)
-          {
-            if (!String.IsNullOrWhiteSpace(match.Value))
-            {
-              optionValues.Add(match.Value.Trim());
-            }
-          }
-        }
-      }
-
-      //
-
-      foreach (var item in optionValues)
-      {
-        var optionItem = item.Trim();
-
-        if (optionItem.Length >= 1)
-        {         
-          char lastChar = Char.ToLower(optionItem[optionItem.Length - 1]);
-
-          if ((lastChar >= '0') && (lastChar <= '9'))
-          { // without type signal character means quantity
-            lastChar = '#';
-          }
-          else
-          {
-            optionItem = optionItem.Substring(0, optionItem.Length - 1);                           // cut last character
-          }
-
-          var found = tempControl.Find(x => (x.code == lastChar));
-
-          if (found.code != lastChar)
-          {
-            ShowErrorMessageAndUsage($"Error! Invalid 'prevVersion' option type code of value! [{item}]", 3);
-          }
-
-          //
-
-          int value;                                                            // value part of 'item' in prevVersionOption.Values
-
-          {
-            if (!int.TryParse(optionItem, out value))
-            {
-              value = 0;
-            }
-
-            if ((value < 1) || (value > found.maxvalue))
-            {
-              ShowErrorMessageAndUsage($"Error! Invalid 'prevVersion' option value number (min:1, max: {found.maxvalue})! [{item}]", 3);
-            }
-          }
-
-          value *= found.multiplier;
-
-          switch (found.type)
-          {
-            case 's':                                                           // size
-              parameters.prevVerFilesSize   += value;              
-              break;
-            case 't':                                                           // time
-              parameters.prevVerFilesAge    += value;
-              break;
-            case 'q':                                                           // quantity
-              parameters.prevVerFilesCount  += value;
-              break;                                                                                
-            default:
-              ShowErrorMessageAndUsage($"Error! Invalid 'prevVersion' option type code of value! [{item}] (internal error!)", 3);
-              break;
-          }
-        }
-      }
-    }
-
-    private static List<string> SplitParamList(List<string> original)
-    {
-      var result = new List<string>();
-
-      foreach (var item in original)
-      {
-        var temp = item.Split(new[] {':', '|', '/'}, StringSplitOptions.RemoveEmptyEntries);
-
-        foreach (var item2 in temp)
-        { // like result.AddRange(temp) with trim()
-          result.Add(item2.Trim());
-        }
-      }
-
-      return result;
-    }
-
-    private static void ShowErrorMessageAndUsage(string errorMessage = null, int exitCode = 0, bool showHelp = true)
+    public static void ShowErrorMessageAndUsage(string errorMessage = null, int exitCode = 0, bool showHelp = true, bool onlyWarning = false)
     {
       if (showHelp && !parameters.silence)
       {
@@ -391,7 +324,11 @@ namespace BackupperKISS
         Console.ForegroundColor = ConsoleColor.Red;
 
         Console.Error.WriteLine();
-        Console.Error.WriteLine("-------------------------------- !!! ERROR !!! --------------------------------");
+        if (!onlyWarning)
+        {
+          Console.Error.WriteLine("-------------------------------- !!! ERROR !!! --------------------------------");
+        }
+
         Console.Error.WriteLine(errorMessage);
         Console.Error.WriteLine();
 
@@ -408,31 +345,15 @@ namespace BackupperKISS
         Environment.Exit(exitCode);
       }
     }
-
-    private static void ShowParameterValues()
-    {
-      if (!parameters.silence)
-      {
-        Console.WriteLine("--- Command line parameters: ---");
-        Console.WriteLine($"Source directory      [1st]:  {parameters.sourceDir}");
-        Console.WriteLine($"Target directory      [2nd]:  {parameters.targetDir}");
-        Console.WriteLine($"Include files         [-i] :  {string.Join("|", parameters.includeFiles)}");
-        Console.WriteLine($"Exclude files         [-e] :  {string.Join("|", parameters.excludeFiles)}");
-        Console.WriteLine($"Copy subdirectories   [-s] :  {parameters.copySubdirectories}");
-        Console.WriteLine($"Create root directory [-cr]:  {parameters.createRootDirectory}");
-        Console.WriteLine($"Exist subdirectories  [-es]:  {parameters.existSubdirectories}");
-        Console.WriteLine($"Check archive bit     [-q] :  {parameters.checkArchiveBit}");
-        Console.WriteLine($"Clear archive bit     [-c] :  {parameters.clearArchiveBit}");
-        Console.WriteLine($"Prev.Ver. Files Count [-pv]:  {parameters.prevVerFilesCount}");
-        Console.WriteLine($"Prev.Ver. Files Size  [-pv]:  {parameters.prevVerFilesSize} Kbytes");
-        Console.WriteLine($"Prev.Ver. Files Age   [-pv]:  {parameters.prevVerFilesAge} days");
-        Console.WriteLine($"Silence/Supress displ.[-si]:  {parameters.silence}");
-        Console.WriteLine($"Echo copied filename  [-le]:  {parameters.logEcho}");
-        Console.WriteLine($"Quick check           [-qc]:  {parameters.quickCheck}");
-        Console.WriteLine($"Backup of backup      [-bb]:  {parameters.backupOfBackup}");
-
-        Console.WriteLine();
-      }
-    }
   }
+
+  public enum ExitCode
+  {
+    OK            = 0,
+    NormalExit    = 1,
+    ParameterErr1 = 11,
+    ParameterErr2 = 12,
+    Error         = 100,
+    ZipError      = 101
+  };
 }

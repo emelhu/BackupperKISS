@@ -3,6 +3,10 @@ using System.Collections.Generic;
 using System.Text;
 using System.IO;
 using System.IO.Compression;
+using System.Diagnostics;
+using System.Threading.Tasks;
+using System.Threading;
+using System.Runtime.InteropServices;
 
 // https://docs.microsoft.com/en-us/dotnet/api/system.io.compression.zipfile?view=netframework-4.7.2
 // https://docs.microsoft.com/en-us/dotnet/standard/io/how-to-compress-and-extract-files
@@ -11,13 +15,13 @@ namespace BackupperKISS
 {
   public class Backupper
   {
-    Parameters parameters;
+    private Parameters parameters;
 
     public Backupper(Parameters parameters)
     {
       this.parameters = parameters;
 
-      if (! Directory.Exists(parameters.sourceDir))
+      if (!Directory.Exists(parameters.sourceDir))
       {
         throw new Exception("Source directory isn't exists! {parameters.sourceDir}");
       }
@@ -34,46 +38,119 @@ namespace BackupperKISS
         }
       }
 
-      if (string.IsNullOrWhiteSpace(parameters.targetExtension))
-      {
-        this.parameters.targetExtension = Parameters.targetExtensionDefault;
-      }
-
-      if (parameters.includeFiles == null)
-      {
-        this.parameters.includeFiles = new List<string>();
-      }
-
-      if ((this.parameters.includeFiles.Count < 1) && (! String.IsNullOrWhiteSpace(Parameters.includeFileWildcardDefault)))
-      {
-        this.parameters.includeFiles.Add(Parameters.includeFileWildcardDefault);
-      }
-
-      if (parameters.excludeFiles == null)
-      {
-        this.parameters.excludeFiles = new List<string>();
-      }
-
-      if (!this.parameters.backupOfBackup)
-      {
-        this.parameters.excludeFiles.Add("*" + this.parameters.targetExtension);
-      }
+      parameters.Reviser();      
 
       this.parameters.sourceDir = AddDirectorySeparatorChar(parameters.sourceDir);
       this.parameters.targetDir = AddDirectorySeparatorChar(parameters.targetDir);
     }
 
-    public (int copied, int droped) Backup()
+    static Backupper()
     {
-      string relativePath = String.Empty;        
+      bool isWindows = System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
 
-      return Backup(relativePath);
-    }  
-    
+      isCaseInsensitiveFilenames = isWindows;              
+    }
+
+    private Stack<Parameters> paramStack = new Stack<Parameters>();
+
+    public (int copied, int droped) Backup(string relativePath = null)
+    {
+      (int copied, int droped) result = (0, 0);
+
+      if (string.IsNullOrWhiteSpace(relativePath))
+      {
+        relativePath = String.Empty;
+      }
+      else
+      {
+        relativePath = AddDirectorySeparatorChar(relativePath);
+      }
+
+      //
+
+      string parametersFilename      = Path.Combine(SourceAbsolutePath(relativePath), Parameters.parameterFileNameDefault);
+      bool isParameterDefinitionFile = File.Exists(parametersFilename);
+
+      if (isParameterDefinitionFile)
+      {
+        paramStack.Push(parameters);
+        parameters = parameters.Clone();
+        parameters.LoadFrom(parametersFilename);
+      }
+
+      if (string.IsNullOrWhiteSpace(relativePath))
+      {
+        parameters.Display("--- parameters (root) ---");
+      }
+
+      if (parameters.writeDebugText)
+      {
+        if (!string.IsNullOrWhiteSpace(relativePath))
+        {
+          parameters.Display($"--- parameters ({relativePath}) ---");
+        }
+
+        var debugFilename = parametersFilename + "__Debug.txt";
+        parameters.SaveTo(debugFilename);
+
+        File.AppendAllText(debugFilename, $"// RelativePath: {relativePath}\n" +
+                                          $"// Timestamp: {DateTime.Now.ToString("o")}");
+      }
+
+      //     
+
+      if (RequiredSubDirectory(relativePath))
+      {
+        try
+        {
+          switch (parameters.method)
+          {
+            case MethodParameter.Singly:
+              result = BackupSingly(relativePath);
+
+              break;
+
+            case MethodParameter.Groups:
+              throw new NotImplementedException("MethodParameter.Groups");
+
+            case MethodParameter.Copy:
+              throw new NotImplementedException("MethodParameter.Copy");
+
+            case MethodParameter.Dont:
+              break;
+
+            default:
+              Debug.Fail($"Internal error! Invalid parameters.method value: {parameters.method}");
+              break;
+          }
+        }
+        catch (Exception exc)
+        {
+          Program.ShowErrorMessageAndUsage(exc.Message, (int)ExitCode.ZipError, false);
+        }
+      }
+
+      if (isParameterDefinitionFile)
+      {
+        parameters = paramStack.Pop();
+      }
+
+      if (parameters.writeDebugText)
+      {
+        var debugFilename = parametersFilename + "__Debug.txt";
+
+        File.AppendAllText(debugFilename, $"// summary >> copied: {result.copied}  droped: {result.droped}");
+      }
+
+      return result;
+    }
+
     private const string timeFormater = "yyyyMMdd_HHmmss";
-    private const char   partSelector = '~';
+    private const char partSelector = '~';
 
-    private (int copied, int droped) Backup(string relativePath)
+    public static readonly bool isCaseInsensitiveFilenames = true;
+
+    private (int copied, int droped) BackupSingly(string relativePath)
     {
       int copied = 0;
       int droped = 0;
@@ -84,150 +161,24 @@ namespace BackupperKISS
 
         foreach (var fullSourceFilename in fullSourceFilenames)
         {
-          string sourceFilename     = Path.GetFileName(fullSourceFilename);
-          string fullTargetFilename = Path.Combine(parameters.targetDir + relativePath, sourceFilename + parameters.targetExtension);
+          string sourceFilename        = Path.GetFileName(fullSourceFilename);
+          string fullTargetFilename = Path.Combine(TargetAbsolutePath(relativePath), sourceFilename + parameters.targetExtension);
 
-          var    sourceLWT          = File.GetLastWriteTime(fullSourceFilename);
-          string targetZipEntryName = Path.GetFileNameWithoutExtension(sourceFilename) + partSelector + sourceLWT.ToString(timeFormater) + Path.GetExtension(sourceFilename);
-          bool   updateZipDate      = false;
+          var result = BackupToZip(fullSourceFilename, fullTargetFilename, false);
 
-          if (File.Exists(fullTargetFilename))
-          {
-            if (parameters.quickCheck && (sourceLWT == File.GetLastWriteTime(fullTargetFilename)))
-            { // Quick check [shortcut!]: if date equal, We *hope* the content is unchanged!
-              updateZipDate = false;
-            }
-            else
-            {
-              bool foundThisTargetFile = false;
-
-              File.SetAttributes(fullTargetFilename, File.GetAttributes(fullTargetFilename) & ~FileAttributes.ReadOnly);   // remove readonly bit
-
-              using (ZipArchive archive = ZipFile.Open(fullTargetFilename, ZipArchiveMode.Update))
-              {
-                var entries = new List<ZipArchiveEntry>();
-
-                foreach (ZipArchiveEntry entry in archive.Entries)
-                {
-                  if (entry.Name == targetZipEntryName)
-                  {
-                    foundThisTargetFile = true;
-                  }
-                  else
-                  {
-                    entries.Add(entry);
-                  }
-                }
-
-                if (!foundThisTargetFile)
-                {
-                  archive.CreateEntryFromFile(fullSourceFilename, targetZipEntryName);
-                  copied++;
-
-                  if (parameters.logEcho)
-                  {
-                    Console.WriteLine(fullSourceFilename);
-                  }
-                }
-
-                //
-
-                entries.Sort((a, b) => b.Name.CompareTo(a.Name));               // Reverse order! (because 'b'.compare and parameter 'a')
-
-                int  keepCount = parameters.prevVerFilesCount;                  // keep count of stored archive files
-                long keepSize  = parameters.prevVerFilesSize;                   // keep size in kilobytes
-                int  keepDays  = parameters.prevVerFilesAge;                    // keep age in days
-
-                if (keepCount < 1)
-                {
-                  keepCount = Parameters.prevVerFilesCountDefault;
-                }
-
-                if (keepSize < 1)
-                {
-                  keepSize = Parameters.prevVerFilesSizeDefault;
-                }
-
-                if (keepDays < 1)
-                {
-                  keepDays = Parameters.prevVerFilesAgeDefault;
-                }
-
-                int  sumCount  = 0;
-                long sumSize   = 0;
-                var  keepDate  = (DateTime.Now.AddDays(-keepDays)).ToString(timeFormater);
-
-                foreach (var entry in entries)
-                {
-                  int entrySelectorPos  = entry.Name.LastIndexOf(partSelector);
-                  int targetSelectorPos = targetZipEntryName.LastIndexOf(partSelector);
-
-                  if ((entry.Name.Length                               != targetZipEntryName.Length) ||
-                      (entrySelectorPos                                != targetSelectorPos) ||
-                      (Path.GetExtension(entry.Name).ToLower()         != Path.GetExtension(targetZipEntryName).ToLower()) ||
-                      (entry.Name.Substring(0, partSelector).ToLower() != targetZipEntryName.Substring(0, partSelector).ToLower()))
-                  { // drop it, it's not my content
-                    entry.Delete();
-                    droped++;
-                  }
-                  else if (entry.Name.Substring(entrySelectorPos + 1, keepDate.Length).CompareTo(keepDate) < 0)
-                  { // drop it, it's too old
-                    entry.Delete();
-                    droped++;
-                  }
-                  else
-                  {
-                    sumCount++;
-                    sumSize += entry.CompressedLength / 1024;
-
-                    if ((sumCount > keepCount) || (sumSize > keepSize))
-                    { // drop it
-                      entry.Delete();
-                      droped++;
-                    }
-                  }
-                }
-              }
-
-              updateZipDate = true;
-            }
-          }
-          else
-          { // Create new ZIP
-            using (ZipArchive archive = ZipFile.Open(fullTargetFilename, ZipArchiveMode.Create))
-            {
-              archive.CreateEntryFromFile(fullSourceFilename, targetZipEntryName);
-              updateZipDate = true;
-              copied++;
-
-              if (parameters.logEcho)
-              {
-                Console.WriteLine(fullSourceFilename);
-              }
-            }
-          }
-
-          if (updateZipDate)
-          {            
-            File.SetLastWriteTime(fullTargetFilename, sourceLWT);
-            File.SetAttributes(fullTargetFilename, FileAttributes.ReadOnly);
-          }
-
-          if (parameters.clearArchiveBit)
-          {
-            File.SetAttributes(fullSourceFilename, File.GetAttributes(fullSourceFilename) & ~FileAttributes.Archive);   // remove archive bit
-          }
+          copied += result.copied;
+          droped += result.droped;
         }
 
         if (parameters.copySubdirectories)
         {
-          var directories = Directory.GetDirectories(parameters.sourceDir + relativePath);
+          var directories = Directory.GetDirectories(SourceAbsolutePath(relativePath));
 
           foreach (var subdir in directories)
           {
             var relSubDir = subdir.Substring(parameters.sourceDir.Length);
 
-            var result = Backup(AddDirectorySeparatorChar(relSubDir));                                            // recursion
+            var result = Backup(relSubDir);                                                     // recursion / half recursion
 
             copied += result.copied;
             droped += result.droped;
@@ -238,9 +189,194 @@ namespace BackupperKISS
       return (copied, droped);
     }
 
+    private (int copied, int droped) BackupToZip(string fullSourceFilename, string fullTargetFilename, bool moreThanOneFileMode)
+    {  
+      int copied = 0;
+      int droped = 0;
+
+      string  sourceFilename     = Path.GetFileName(fullSourceFilename);
+      var     sourceLWT          = File.GetLastWriteTime(fullSourceFilename);
+      string  targetZipEntryName = Path.GetFileNameWithoutExtension(sourceFilename) + partSelector + sourceLWT.ToString(timeFormater) + Path.GetExtension(sourceFilename);
+
+      bool updateZipDate = false;
+
+      if (File.Exists(fullTargetFilename))
+      {
+        if (!moreThanOneFileMode && parameters.quickCheck && (sourceLWT == File.GetLastWriteTime(fullTargetFilename)))
+        { // Quick check [shortcut!]: if date equal, We *hope* the content is unchanged!
+          updateZipDate = false;
+        }
+        else
+        {
+          bool foundThisTargetFile = false;
+
+          File.SetAttributes(fullTargetFilename, File.GetAttributes(fullTargetFilename) & ~FileAttributes.ReadOnly);   // remove readonly bit
+
+          var cancellationTokenSource = new CancellationTokenSource();
+          var cancellationToken = cancellationTokenSource.Token;
+          Task.Factory.StartNew(() =>
+          {
+            Thread.Sleep(5000);
+            if (!cancellationToken.IsCancellationRequested)
+            { // because: Unfortunately ZipFile.Open() can run to infinitive loop.
+              Program.ShowErrorMessageAndUsage($"Infinitive loop error at open {targetZipEntryName} target archive file!\n  (for store {sourceFilename} source file)", (int)ExitCode.ZipError, false);
+              //throw new Exception($"Infinitive loop error at open {targetZipEntryName} archive file! (for store {sourceFilename} source file)");      
+            }
+          },
+                cancellationToken);
+
+
+          using (ZipArchive archive = ZipFile.Open(fullTargetFilename, ZipArchiveMode.Update))                // Unfortunately it can run to infinitive loop.
+          {
+            cancellationTokenSource.Cancel();                             // ZipFile.Open() succesfull, don't throw exception in 'protectiveTask'
+
+            var entries = new List<ZipArchiveEntry>();                    // for select old and above the headcount existing entries of Zip to delete these.
+
+            foreach (ZipArchiveEntry entry in archive.Entries)
+            {
+              if (entry.Name == targetZipEntryName)
+              {
+                foundThisTargetFile = true;
+              }
+              else
+              {
+                entries.Add(entry);
+              }
+            }
+
+            if (!foundThisTargetFile)
+            {
+              archive.CreateEntryFromFile(fullSourceFilename, targetZipEntryName);
+              copied++;
+
+              if (parameters.logEcho)
+              {
+                Console.WriteLine(fullSourceFilename);
+              }
+            }
+
+            //
+
+            entries.Sort((a, b) => b.Name.CompareTo(a.Name));               // Reverse order! (because 'b'.compare and parameter 'a')
+
+            PrevVersParameters prevVersParams = parameters.prevVers.GetPrevVersParameters(sourceFilename);
+
+            int sumCount = 0;
+            long sumSize = 0;
+            var keepDate = (DateTime.Now.AddDays(-prevVersParams.age)).ToString(timeFormater);
+
+            foreach (var entry in entries)
+            {
+              if (!IsPairedFilenames(entry.Name, targetZipEntryName))
+              { // drop it, it's not my content   
+                if (!moreThanOneFileMode)
+                { 
+                  entry.Delete();
+                  droped++;
+
+                  Trace.TraceWarning($"{fullTargetFilename}: entry '{entry.Name}' is deleted!");
+                  // TODO: display info
+                }
+              }
+              else if (isFilenameDatePartOlderThanKeepDate(entry.Name, keepDate))
+              { // drop it, it's too old
+                entry.Delete();
+                droped++;
+              }
+              else
+              {
+                sumCount++;
+                sumSize += entry.CompressedLength / 1024;
+
+                if ((sumCount > prevVersParams.count) || (sumSize > prevVersParams.size))
+                { // drop it
+                  entry.Delete();
+                  droped++;
+                }
+              }
+            }
+          }
+
+          updateZipDate = true;
+        }
+      }
+      else
+      { // Create new ZIP
+        using (ZipArchive archive = ZipFile.Open(fullTargetFilename, ZipArchiveMode.Create))
+        {
+          archive.CreateEntryFromFile(fullSourceFilename, targetZipEntryName);
+          updateZipDate = true;
+          copied++;
+
+          if (parameters.logEcho)
+          {
+            Console.WriteLine(fullSourceFilename);
+          }
+        }
+      }
+
+      if (updateZipDate)
+      {
+        File.SetLastWriteTime(fullTargetFilename, sourceLWT);
+        File.SetAttributes(fullTargetFilename, FileAttributes.ReadOnly);
+      }
+
+      if (parameters.clearArchiveBit)
+      {
+        File.SetAttributes(fullSourceFilename, File.GetAttributes(fullSourceFilename) & ~FileAttributes.Archive);   // remove archive bit
+      }
+
+
+      return (copied, droped);
+    }
+
+    private bool isFilenameDatePartOlderThanKeepDate(string name, string keepDate)
+    {
+      int partSelectorPos = name.LastIndexOf(partSelector);
+
+      return (name.Substring(partSelectorPos + 1, keepDate.Length).CompareTo(keepDate) < 0);
+    }
+
+    private bool IsPairedFilenames(string name1, string name2)
+    {
+      int partSelectorPos = name1.LastIndexOf(partSelector);
+
+      if ((partSelectorPos > 0) && (partSelectorPos == name2.LastIndexOf(partSelector)))
+      {
+        if (name1.Length == name2.Length)
+        {
+          if (isCaseInsensitiveFilenames)
+          {
+            name1 = name1.ToLower();
+            name2 = name2.ToLower();
+          }
+
+          if (name1.Substring(0, partSelectorPos) == name2.Substring(0, partSelectorPos))
+          {
+            if (Path.GetExtension(name1) == Path.GetExtension(name2))
+            {
+              return true;
+            }
+          }
+        }
+      }             
+
+      return false;
+    }
+
+    private string TargetAbsolutePath(string relativePath) 
+    {
+      return Path.Combine(parameters.targetDir + relativePath); 
+    }
+
+    private string SourceAbsolutePath(string relativePath)
+    {
+      return Path.Combine(parameters.sourceDir + relativePath);
+    }
+
     private bool RequiredSubDirectory(string relativePath)
     {
-      string targetFilesPath = Path.Combine(parameters.targetDir + relativePath);
+      string targetFilesPath = TargetAbsolutePath(relativePath);
 
       if (! Directory.Exists(targetFilesPath))
       {
@@ -268,7 +404,7 @@ namespace BackupperKISS
 
       foreach (var wildcard in parameters.includeFiles)
       {
-        var includeNames = Directory.GetFiles(parameters.sourceDir + relativePath, wildcard);
+        var includeNames = Directory.GetFiles(SourceAbsolutePath(relativePath), wildcard);
 
         foreach (var tempName in includeNames)
         {
@@ -295,7 +431,7 @@ namespace BackupperKISS
 
       foreach (var wildcard in parameters.excludeFiles)
       {
-        var excludeNames = Directory.GetFiles(parameters.sourceDir + relativePath, wildcard);
+        var excludeNames = Directory.GetFiles(SourceAbsolutePath(relativePath), wildcard);
 
         foreach (var tempName in excludeNames)
         {
@@ -305,11 +441,21 @@ namespace BackupperKISS
 
       return files;
     }
+
+    //
+
+    private class Disp
+    {
+      void Out(string text = ".", bool clearPrev = false)
+      {
+        // TODO: ...!!!...
+      }
+
+      void Log(string text)
+      {
+        // TODO: ...!!!...
+      }
+    }
   }  
 }
 
-
-/*
-  var attr = File.GetAttributes(filename);
-  File.SetAttributes(filename, attr & ~FileAttributes.Archive);                         // removed
-*/
